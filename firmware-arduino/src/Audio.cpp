@@ -118,6 +118,10 @@ void audioStreamTask(void *parameter) {
     cfg.bits_per_sample = BITS_PER_SAMPLE;
     cfg.max_buffer_size = 6144;
 
+    Serial.printf("Opus decoder config: sample_rate=%d, channels=%d, bits=%d\n",
+        cfg.sample_rate, cfg.channels, cfg.bits_per_sample);
+    Serial.flush();
+
     xSemaphoreTake(wsMutex, portMAX_DELAY);
     opusDecoder.setOutput(bufferPrint);
     opusDecoder.begin(cfg);
@@ -139,6 +143,8 @@ void audioStreamTask(void *parameter) {
 
     Serial.printf("Initializing I2S output on port %d\n", I2S_PORT_OUT);
     Serial.printf("Pins - BCK:%d WS:%d DATA:%d\n", I2S_BCK_OUT, I2S_WS_OUT, I2S_DATA_OUT);
+    Serial.printf("I2S config: sample_rate=%d, channels=%d, bits=%d\n",
+        config.sample_rate, config.channels, config.bits_per_sample);
     Serial.flush();
 
     bool i2s_ok = i2s.begin(config);

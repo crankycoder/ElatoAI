@@ -20,7 +20,7 @@ unsigned long speakingStartTime = 0;
 
 // AUDIO SETTINGS
 int currentVolume = 70;
-float currentPitchFactor = 1.0f;
+float currentPitchFactor = 2.0f;
 const int CHANNELS = 1;         // Mono
 const int BITS_PER_SAMPLE = 16; // 16-bit audio
 

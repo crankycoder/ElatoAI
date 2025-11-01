@@ -116,7 +116,7 @@ void audioStreamTask(void *parameter) {
     cfg.sample_rate = SAMPLE_RATE;
     cfg.channels = CHANNELS;
     cfg.bits_per_sample = BITS_PER_SAMPLE;
-    cfg.max_buffer_size = 12288;  // Increased for 48kHz support (was 6144)
+    cfg.max_buffer_size = 6144;
 
     Serial.printf("Opus decoder config: sample_rate=%d, channels=%d, bits=%d\n",
         cfg.sample_rate, cfg.channels, cfg.bits_per_sample);

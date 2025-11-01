@@ -63,7 +63,7 @@ String authTokenGlobal;
 volatile DeviceState deviceState = IDLE;
 
 // I2S and Audio parameters
-const uint32_t SAMPLE_RATE = 48000;
+const uint32_t SAMPLE_RATE = 24000;
 
 // ----------------- Pin Definitions -----------------
 const i2s_port_t I2S_PORT_IN = I2S_NUM_1;

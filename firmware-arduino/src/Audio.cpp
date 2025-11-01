@@ -20,7 +20,7 @@ unsigned long speakingStartTime = 0;
 
 // AUDIO SETTINGS
 int currentVolume = 70;
-float currentPitchFactor = 2.0f;
+float currentPitchFactor = 1.0f;
 const int CHANNELS = 1;         // Mono
 const int BITS_PER_SAMPLE = 16; // 16-bit audio
 
@@ -356,10 +356,8 @@ void webSocketEvent(WStype_t type, const uint8_t *payload, size_t length)
         // auth messages
         if (strcmp((char*)type.c_str(), "auth") == 0) {
             currentVolume = doc["volume_control"].as<int>();
-            // Force pitch factor to 2.0 for testing (ignore server value)
-            currentPitchFactor = 2.0f;
-
-            Serial.printf("Auth received: volume=%d, pitch_factor=%.2f (FORCED)\n", currentVolume, currentPitchFactor);
+            currentPitchFactor = doc["pitch_factor"].as<float>();
+            Serial.printf("Auth received: volume=%d, pitch_factor=%.2f\n", currentVolume, currentPitchFactor);
             Serial.flush();
 
             bool is_ota = doc["is_ota"].as<bool>();

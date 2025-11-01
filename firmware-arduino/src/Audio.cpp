@@ -1,9 +1,11 @@
 #include "OTA.h"
 #include "Audio.h"
 #include "PitchShift.h"
+#include <driver/i2s.h>
 
 // WEBSOCKET
 SemaphoreHandle_t wsMutex;
+SemaphoreHandle_t i2sInitMutex;
 WebSocketsClient webSocket;
 
 // TASK HANDLES
@@ -126,28 +128,59 @@ void audioStreamTask(void *parameter) {
     queue.begin();
 
     auto config = i2s.defaultConfig(TX_MODE);
-    config.bits_per_sample = BITS_PER_SAMPLE;
-    config.sample_rate = SAMPLE_RATE;
-    config.channels = CHANNELS;
+    config.copyFrom(info);
     config.pin_bck = I2S_BCK_OUT;
     config.pin_ws = I2S_WS_OUT;
     config.pin_data = I2S_DATA_OUT;
     config.port_no = I2S_PORT_OUT;
 
-    config.copyFrom(info);  
-    i2s.begin(config);  
+    // Take mutex to ensure I2S drivers don't initialize simultaneously
+    xSemaphoreTake(i2sInitMutex, portMAX_DELAY);
+
+    Serial.printf("Initializing I2S output on port %d\n", I2S_PORT_OUT);
+    Serial.printf("Pins - BCK:%d WS:%d DATA:%d\n", I2S_BCK_OUT, I2S_WS_OUT, I2S_DATA_OUT);
+    Serial.flush();
+
+    bool i2s_ok = i2s.begin(config);
+    Serial.printf("I2S output begin returned: %d\n", i2s_ok);
+
+    // Verify driver was actually installed - i2s_set_clk will fail if driver not installed
+    esp_err_t verify_err = i2s_set_clk((i2s_port_t)I2S_PORT_OUT, SAMPLE_RATE, (i2s_bits_per_sample_t)BITS_PER_SAMPLE, I2S_CHANNEL_MONO);
+    Serial.printf("I2S output driver verify (set_clk): err=%d (ESP_OK=0)\n", verify_err);
+    Serial.flush();
+
+    if (!i2s_ok) {
+        Serial.println("ERROR: I2S output failed to initialize!");
+        Serial.flush();
+        xSemaphoreGive(i2sInitMutex);
+        while(1) { vTaskDelay(1000); }
+    }
+    Serial.println("I2S output initialized successfully");
+    Serial.flush();
+
+    xSemaphoreGive(i2sInitMutex);  
+
+    // Initialize pitch shift with default factor (always needed)
+    auto pcfg = pitchShift.defaultConfig();
+    pcfg.copyFrom(info);
+    pcfg.pitch_shift = currentPitchFactor;
+    pcfg.buffer_size = 512;
+    pitchShift.begin(pcfg);
+    Serial.printf("Pitch shift initialized with factor: %.2f\n", currentPitchFactor);
+    Serial.flush();
 
     // Initialize both volume streams once
     auto vcfg = volume.defaultConfig();
     vcfg.copyFrom(info);
     vcfg.allow_boost = true;
     volume.begin(vcfg);
-    
+
     auto vcfgPitch = volumePitch.defaultConfig();
     vcfgPitch.copyFrom(info);
     vcfgPitch.allow_boost = true;
     volumePitch.begin(vcfgPitch);
 
+    bool first_write = true;
     while (1) {
         if ( i2sOutputFlushScheduled) {
             i2sOutputFlushScheduled = false;
@@ -158,6 +191,17 @@ void audioStreamTask(void *parameter) {
         }
 
         if (webSocket.isConnected() && deviceState == SPEAKING) {
+            // Log driver state on first audio write attempt
+            if (first_write) {
+                esp_err_t check_before_write = i2s_set_clk((i2s_port_t)I2S_PORT_OUT, SAMPLE_RATE, (i2s_bits_per_sample_t)BITS_PER_SAMPLE, I2S_CHANNEL_MONO);
+                Serial.printf("I2S output driver BEFORE first write: err=%d (ESP_OK=0)\n", check_before_write);
+                Serial.printf("Audio routing: pitch_factor=%.2f, using %s path\n",
+                    currentPitchFactor,
+                    (currentPitchFactor != 1.0f) ? "PITCH SHIFT" : "DIRECT");
+                Serial.flush();
+                first_write = false;
+            }
+
             if (currentPitchFactor != 1.0f) {
                 pitchCopier.copy();
             } else {
@@ -207,6 +251,15 @@ volatile bool i2sInputFlushScheduled = false;
 const int MIC_COPY_SIZE = 64;
 
 void micTask(void *parameter) {
+    // Delay mic initialization to ensure output task is fully initialized first.
+    // Without this delay, initializing I2S_NUM_1 immediately after I2S_NUM_0
+    // causes the I2S_NUM_0 driver handle to become NULL, resulting in crash.
+    // Root cause is unclear - possible race condition in ESP-IDF i2s_driver_install().
+    vTaskDelay(500);
+
+    Serial.println("Starting microphone I2S input...");
+    Serial.flush();
+
     // Configure and start I2S input stream.
     auto i2sConfig = i2sInput.defaultConfig(RX_MODE);
     i2sConfig.bits_per_sample = BITS_PER_SAMPLE;
@@ -219,7 +272,30 @@ void micTask(void *parameter) {
     i2sConfig.pin_ws  = I2S_WS;
     i2sConfig.pin_data = I2S_SD;
     i2sConfig.port_no = I2S_PORT_IN;
-    i2sInput.begin(i2sConfig);
+
+    // Take mutex to ensure I2S drivers don't initialize simultaneously
+    xSemaphoreTake(i2sInitMutex, portMAX_DELAY);
+
+    Serial.printf("Initializing I2S input on port %d\n", I2S_PORT_IN);
+
+    // Check I2S output driver BEFORE initializing input
+    esp_err_t out_check_before = i2s_set_clk((i2s_port_t)I2S_PORT_OUT, SAMPLE_RATE, (i2s_bits_per_sample_t)BITS_PER_SAMPLE, I2S_CHANNEL_MONO);
+    Serial.printf("I2S output driver BEFORE input init: err=%d (ESP_OK=0)\n", out_check_before);
+    Serial.flush();
+
+    bool mic_ok = i2sInput.begin(i2sConfig);
+    Serial.printf("I2S input begin returned: %d\n", mic_ok);
+
+    // Check I2S output driver AFTER initializing input (this will tell us if it got corrupted)
+    esp_err_t out_check_after = i2s_set_clk((i2s_port_t)I2S_PORT_OUT, SAMPLE_RATE, (i2s_bits_per_sample_t)BITS_PER_SAMPLE, I2S_CHANNEL_MONO);
+    Serial.printf("I2S output driver AFTER input init: err=%d (ESP_OK=0)\n", out_check_after);
+
+    // Check I2S input driver
+    esp_err_t in_check = i2s_set_clk((i2s_port_t)I2S_PORT_IN, 16000, (i2s_bits_per_sample_t)BITS_PER_SAMPLE, I2S_CHANNEL_MONO);
+    Serial.printf("I2S input driver verify: err=%d (ESP_OK=0)\n", in_check);
+    Serial.flush();
+
+    xSemaphoreGive(i2sInitMutex);
 
     micToWsCopier.setDelayOnNoData(0);
 
@@ -276,21 +352,22 @@ void webSocketEvent(WStype_t type, const uint8_t *payload, size_t length)
             currentVolume = doc["volume_control"].as<int>();
             currentPitchFactor = doc["pitch_factor"].as<float>();
 
+            Serial.printf("Auth received: volume=%d, pitch_factor=%.2f\n", currentVolume, currentPitchFactor);
+            Serial.flush();
+
             bool is_ota = doc["is_ota"].as<bool>();
             bool is_reset = doc["is_reset"].as<bool>();
 
             // Update volumes on both streams
             volume.setVolume(currentVolume / 100.0f);
             volumePitch.setVolume(currentVolume / 100.0f);
-            
-            // Only initialize pitch shift if needed
-            if (currentPitchFactor != 1.0f) {
-                auto pcfg = pitchShift.defaultConfig();
-                pcfg.copyFrom(info);
-                pcfg.pitch_shift = currentPitchFactor;
-                pcfg.buffer_size = 512;
-                pitchShift.begin(pcfg);
-            }
+
+            // Reinitialize pitch shift with new factor
+            auto pcfg = pitchShift.defaultConfig();
+            pcfg.copyFrom(info);
+            pcfg.pitch_shift = currentPitchFactor;
+            pcfg.buffer_size = 512;
+            pitchShift.begin(pcfg);
 
             if (is_ota) {
                 Serial.println("OTA update received");
@@ -314,7 +391,7 @@ void webSocketEvent(WStype_t type, const uint8_t *payload, size_t length)
                 Serial.println("Received RESPONSE.COMPLETE or RESPONSE.ERROR, starting listening again");
 
                 // Check if volume_control is included in the message
-                if (doc.containsKey("volume_control")) {
+                if (doc["volume_control"].is<int>()) {
                     int newVolume = doc["volume_control"].as<int>();
                     volume.setVolume(newVolume / 100.0f);
                 }

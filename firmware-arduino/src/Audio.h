@@ -6,6 +6,7 @@
 #include "Config.h"
 
 extern SemaphoreHandle_t wsMutex;
+extern SemaphoreHandle_t i2sInitMutex;
 extern WebSocketsClient webSocket;
 
 extern TaskHandle_t speakerTaskHandle;

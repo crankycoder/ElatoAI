@@ -41,9 +41,10 @@ void enterSleep() {
   xSemaphoreGive(wsMutex);
   delay(100);
 
-  // Stop all tasks that might be using I2S or other peripherals
-  i2s_driver_uninstall(I2S_PORT_IN);
-  i2s_driver_uninstall(I2S_PORT_OUT);
+  // FIXME: Don't uninstall I2S drivers - they need to persist across sleep/wake
+  // The drivers will be stopped (above) but not uninstalled, so they can resume after wake
+  // i2s_driver_uninstall(I2S_PORT_IN);
+  // i2s_driver_uninstall(I2S_PORT_OUT);
 
   // Flush any remaining serial output
   Serial.flush();
@@ -189,6 +190,7 @@ void setup() {
   // SETUP
   setupDeviceMetadata();
   wsMutex = xSemaphoreCreateMutex();
+  i2sInitMutex = xSemaphoreCreateMutex();
 
 // INTERRUPT
 #ifdef TOUCH_MODE

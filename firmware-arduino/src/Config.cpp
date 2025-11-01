@@ -69,18 +69,20 @@ const uint32_t SAMPLE_RATE = 24000;
 const i2s_port_t I2S_PORT_IN = I2S_NUM_1;
 const i2s_port_t I2S_PORT_OUT = I2S_NUM_0;
 
-const int BLUE_LED_PIN = 13;
-const int RED_LED_PIN = 9;
-const int GREEN_LED_PIN = 8;
+const int RED_LED_PIN = 48;
+const int GREEN_LED_PIN = 47;
+const int BLUE_LED_PIN = 12;
 
-const int I2S_SD = 14;
-const int I2S_WS = 4;
-const int I2S_SCK = 1;
+// INMP441 Microphone Pins
+const int I2S_SD = 13;  // Serial Data
+const int I2S_WS = 15;   // Word Select
+const int I2S_SCK = 14;  // Bit Clock
 
-const int I2S_WS_OUT = 5;
-const int I2S_BCK_OUT = 6;
-const int I2S_DATA_OUT = 7;
-const int I2S_SD_OUT = 10;
+// MAX98357A DAC Pins
+const int I2S_WS_OUT = 19;   // Word Select
+const int I2S_BCK_OUT = 18;  // Bit Clock
+const int I2S_DATA_OUT = 21; // Data In (data out for esp32, data in for DAC)
+const int I2S_SD_OUT = 4;   // Serial Data (Out for ESP32, In for DAC)
 
 const gpio_num_t BUTTON_PIN = GPIO_NUM_2; // Only RTC IO are allowed - ESP32 Pin example
 
